@@ -11,22 +11,13 @@ class GameConfig:
     BLACK: tuple = (0, 0, 0)
     WHITE: tuple = (255, 255, 255)
     INPUT_SIZE: int = 6
-    NUM_STATES: int = 16
+    NUM_STATES: int = 32
     ball_radius: int = 4
     ball_speed: int = 6
     paddle_speed: int = 6
     paddle_width: int = 5
     paddle_height: int = 80
     paddle_offset: int = 10  # Distance from the screen edge
-
-@dataclass
-class TrainingStats:
-    generation: int
-    best_score: float
-    avg_score: float
-    min_score: float
-    time_taken: float
-    unique_solutions: int
 
 # Custom Rectangle Class
 class Rect:
@@ -218,8 +209,6 @@ class AI:
     def mutate_rules(self, mutation_rate=0.05):
         mutation_mask = np.random.rand(*self.rules.shape) < mutation_rate
         mutated_rules = self.rules.copy()
-        # Flip the selected bits to their opposite values
-        # mutated_rules[mutation_mask] = 1 - mutated_rules[mutation_mask]
         mutated_rules[mutation_mask] = np.random.randint(0, 2, size=mutation_mask.sum())
         self.rules = mutated_rules
 
@@ -298,7 +287,6 @@ def simulate_match(game, max_attempts=50):
     total_hits = 0
     total_misses = 0
     hit_accuracies = []  # Track how centered the hits are
-    
     paddle_height = game.paddle.rect.height
 
     game.reset()
@@ -324,13 +312,11 @@ def simulate_match(game, max_attempts=50):
         elif game.ball.rect.right >= game.config.SCREEN_WIDTH:
             game.ball.speed_x = -game.ball.speed_x
 
-    # Calculate base fitness (this should dominate the score)
-    base_fitness = (total_hits / max_attempts)
-    
-    # Calculate auxiliary metrics (these should only slightly influence the final score)
+    hit_miss_ratio = (total_hits / max_attempts)
     avg_hit_accuracy = sum(hit_accuracies) / len(hit_accuracies) if hit_accuracies else 0
-    final_fitness = (0.9 * base_fitness) + (0.1 * avg_hit_accuracy)
-    return final_fitness
+    fitness = (0.9 * hit_miss_ratio) + (0.1 * avg_hit_accuracy)
+    
+    return fitness
 
 def play_game(ai):
     import pygame  # Import pygame locally
@@ -373,21 +359,17 @@ def play_game(ai):
         pygame.display.flip()
         clock.tick(60)
 
-def initialize_population(population_size=100, config=None):
-    population = [AI(num_states=config.NUM_STATES, input_size=config.INPUT_SIZE) 
-                 for _ in range(population_size)]
-    return population
-
 def compute_fitness(ai):
     game = Game(ai=ai)
     fitness = simulate_match(game)
     return fitness, ai
     
-def train_population(population, generations=100, config=None):
+def train_population(population_size=100, generations=100, config=None):
     config = config or GameConfig()
-    population_size = len(population)
+    population = [AI(num_states=config.NUM_STATES, input_size=config.INPUT_SIZE) 
+                 for _ in range(population_size)]
+    
     elite_scores = []
-
     with multiprocessing.Pool() as pool:
         for generation in range(generations):
             # Process population in parallel
@@ -419,7 +401,7 @@ def train_population(population, generations=100, config=None):
                     child = AI(rules=ai.rules.copy(), 
                                input_size=ai.input_size, 
                                num_states=ai.num_states)
-                    child.mutate_rules(mutation_rate=0.2)
+                    child.mutate_rules(mutation_rate=0.1)
 
                     new_population.append(child)
             
@@ -430,12 +412,10 @@ def train_population(population, generations=100, config=None):
 
 if __name__ == '__main__':
     population_size = 100
-    generations = 20
+    generations = 50
 
     config = GameConfig()
-    population = initialize_population(population_size, config)
-
-    ais = train_population(population, generations=generations, config=config)
+    ais = train_population(population_size, generations=generations, config=config)
 
     # Get best performer for the game
     play_game(ais[0])
